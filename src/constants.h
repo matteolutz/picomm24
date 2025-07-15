@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-#pragma region Radio
+/* #region Radio */
 
 #define RADIO_CE 0
 #define RADIO_CSN 0
@@ -31,19 +31,19 @@ const uint64_t PIPES[14] =
         0x544d52685FLL,
         0x544d526869LL};
 
-#pragma endregion
+/* #endregion */
 
-#pragma region Audio
+/* #region Audio */
 
 #define AUDIO_DAC_CHANNEL 0
 #define AUDIO_SAMPLE_RATE 16050
 
-#pragma endregion
+/* #endregion */
 
-#pragma region TX Buttons
+/* #region TX Buttons */
 
 const size_t TX_BUTTONS[RADIO_N_COMM_PIPES] = {0, 0, 0, 0};
 
-#pragma endregion
+/* #endregion */
 
 #endif // CONSTANTS_H
