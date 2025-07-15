@@ -1,0 +1,6 @@
+# PlatformIO and VSCode files
+.pio
+.vscode/
+
+# MacOS files
+.DS_Store
