@@ -5,9 +5,12 @@
 #include <Adafruit_SSD1306.h>
 
 #include "logo.h"
+#include "oled.h"
 
 #include "log.h"
 #include "constants.h"
+
+#include "id.h"
 
 #include "EspNowTransport.h"
 #include "UdpTransport.h"
@@ -44,11 +47,54 @@ Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 #define RECEIVE_BUFFER_SIZE 128
 int16_t samples[RECEIVE_BUFFER_SIZE];
 
+int64_t transmittingButtonIdx = -1;
+
+void drawUi();
+
 void setup()
 {
+  initDeviceId();
   LOG_INIT();
 
+  LOG_INFO("piComm (by Matteo Lutz), version %s, built on %s %s", PICOMM_VERSION, __DATE__, __TIME__);
+  LOG_INFO("Device Efuse MAC: %s", String(ESP.getEfuseMac(), HEX).c_str());
+  LOG_INFO("Device ID Hash: %s", deviceId.c_str());
+
   LOG_INFO("Starting...");
+
+  LOG_INFO("Deserializing preferences...");
+  Preferences prefs;
+  prefs.clear();
+
+  if (!prefs.begin("picomm", false))
+  {
+    LOG_ERROR("Failed to open preferences, rebooting...");
+    delay(5000);
+    ESP.restart();
+    return;
+  }
+
+  for (size_t i = 0; i < NUM_TX_BUTTONS; i++)
+  {
+    serializeButton(prefs, TX_BUTTONS[i], i);
+  }
+
+  LOG_INFO("Preferences deserialized successfully");
+
+  LOG_INFO("Initializing OLED Display...");
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS))
+  {
+    LOG_ERROR("Failed to initialize OLED display, rebooting...");
+    delay(5000);
+    ESP.restart();
+    return;
+  }
+
+  display.clearDisplay();
+  display.drawBitmap(0, 0, picommLogo, OLED_WIDTH, OLED_HEIGHT, WHITE);
+  display.display();
+
+  LOG_INFO("OLED Display initialized successfully");
 
   LOG_INFO("Initializing WiFi and creating Transport...");
   WiFi.mode(WIFI_STA);
@@ -93,26 +139,20 @@ void setup()
   LOG_INFO("Initializing TX Buttons...");
   for (size_t i = 0; i < NUM_TX_BUTTONS; i++)
   {
+    if (TX_BUTTONS[i].pin < 0)
+    {
+      LOG_DEBUG("Skipping TX button %zu as pin is invalid", i);
+      continue;
+    }
+
     pinMode(TX_BUTTONS[i].pin, INPUT_PULLUP);
   }
   LOG_INFO("TX Buttons initialized successfully");
 
-  LOG_INFO("Initializing OLED Display...");
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS))
-  {
-    LOG_ERROR("Failed to initialize OLED display, rebooting...");
-    delay(5000);
-    ESP.restart();
-    return;
-  }
-
-  display.clearDisplay();
-  display.drawBitmap(0, 0, picommLogo, OLED_WIDTH, OLED_HEIGHT, WHITE);
-  display.display();
-
-  LOG_INFO("OLED Display initialized successfully");
-
   LOG_INFO("Done! Let's rock this show!");
+
+  delay(2000);
+  drawUi();
 }
 
 void send();
@@ -135,10 +175,18 @@ void send()
   // Check if any TX button is pressed
   for (size_t i = 0; i < NUM_TX_BUTTONS; i++)
   {
+    if (TX_BUTTONS[i].pin < 0)
+    {
+      continue; // Skip unconfigured buttons
+    }
+
     if (digitalRead(TX_BUTTONS[i].pin) == HIGH)
       continue;
 
     LOG_INFO("TX button %d pressed, transmitting", i);
+
+    transmittingButtonIdx = i;
+    drawUi();
 
     PicommHeader header = {
         .channel = TX_BUTTONS[i].channel,
@@ -165,7 +213,11 @@ void send()
     output.start(AUDIO_SAMPLE_RATE);
 
     LOG_INFO("Transmission complete on channel %d, receiving again...", TX_BUTTONS[i].channel);
+
+    transmittingButtonIdx = -1;
     lastTx = millis();
+
+    drawUi();
   }
 }
 
@@ -173,4 +225,21 @@ void receive()
 {
   outputBuffer.remove_samples(samples, RECEIVE_BUFFER_SIZE);
   output.write(samples, RECEIVE_BUFFER_SIZE);
+}
+
+void drawUi()
+{
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+  display.setTextSize(1);
+  display.setTextWrap(false);
+
+  for (size_t i = 0; i < NUM_TX_BUTTONS; i++)
+  {
+    oledDrawUiItem(display, getButtonName(TX_BUTTONS[i]), i == transmittingButtonIdx,
+                   i % 2 == 0 ? TextAlign::Min : TextAlign::Max,
+                   i < 2 ? TextAlign::Min : TextAlign::Max);
+  }
+
+  display.display();
 }
