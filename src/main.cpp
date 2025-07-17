@@ -5,47 +5,46 @@
 
 #include "constants.h"
 
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif // IRAM_ATTR
+
 AutoAnalog audio;
 
-RF24 radio(RADIO_CE, RADIO_CSN);
+// RF24 radio(RADIO_CE, RADIO_CSN);
 
 const size_t COMM_PIPES[RADIO_N_COMM_PIPES] = {0, 1, 2, 3};
 
-void DACC_Handler(void)
+void IRAM_ATTR DACC_Handler(void)
 {
   audio.dacHandler(); // Link the DAC ISR/IRQ library. Called by the MCU when DAC is ready for data
 }
 
-void RX()
+void IRAM_ATTR RX_Handler()
 {
+  /*
   uint8_t pipe;
   while (radio.available(&pipe))
   {
     radio.read(&audio.dacBuffer, 32);
 
-    /*
-    for (int i = 0; i < 16; i++)
-    { // Convert signed 16-bit variables into unsigned 12-bit
-      audio.dacBuffer16[i] += 0x8000;
-      audio.dacBuffer16[i] = audio.dacBuffer16[i] >> 4;
-    }
-      */
 
-    audio.feedDAC(AUDIO_DAC_CHANNEL, 32);
-  }
-  else
-  {
-    // If not RX IRQ, than it must be TX complete
-    radio.txStandby();
-    radio.startListening();
-  }
+  audio.feedDAC(AUDIO_DAC_CHANNEL, 32);
+}
+else
+{
+  // If not RX IRQ, than it must be TX complete
+  radio.txStandby();
+  radio.startListening();
+}
+*/
 }
 
 void setupAudio()
 {
   audio.begin(1, 1);
   audio.autoAdjust = 0;
-  audio.dacBitsPerSample = 12;
+  audio.dacBitsPerSample = 8;
   audio.adcBitsPerSample = 8;
   audio.setSampleRate(AUDIO_SAMPLE_RATE);
 }
@@ -60,28 +59,68 @@ void setupTxButtons()
 
 void setupRadio()
 {
-  radio.begin();
-  radio.setChannel(RADIO_CHANNEL);
-  radio.setPALevel(RF24_PA_MAX);
-  radio.setDataRate(RF24_1MBPS);
-  radio.setAutoAck(false);
-  radio.setCRCLength(RF24_CRC_8);
-  radio.setAddressWidth(5);
+  /*
+    radio.begin();
+    radio.setChannel(RADIO_CHANNEL);
+    radio.setPALevel(RF24_PA_MAX);
+    radio.setDataRate(RF24_1MBPS);
+    radio.setAutoAck(false);
+    radio.setCRCLength(RF24_CRC_8);
+    radio.setAddressWidth(5);
 
-  for (uint8_t i = 0; i < RADIO_N_COMM_PIPES; ++i)
-  {
-    radio.openReadingPipe(i + 1, PIPES[COMM_PIPES[i]]);
-  }
+    for (uint8_t i = 0; i < RADIO_N_COMM_PIPES; ++i)
+    {
+      radio.openReadingPipe(i + 1, PIPES[COMM_PIPES[i]]);
+    }
 
-  radio.txDelay = 0;
-  radio.csDelay = 0;
+    radio.txDelay = 0;
+    radio.csDelay = 0;
 
-  radio.maskIRQ(0, 1, 0);
-  radio.printDetails();
+    radio.maskIRQ(0, 1, 0);
+    radio.printDetails();
 
-  radio.startListening();
+    radio.startListening();
 
-  attachInterrupt(digitalPinToInterrupt(RADIO_IRQ), RX, FALLING);
+    attachInterrupt(digitalPinToInterrupt(RADIO_IRQ), RX_Handler, FALLING);
+    */
+}
+
+uint8_t shiftVal = 0;
+
+void arraysetup(void)
+{
+  audio.dacBuffer[0] = 127 >> shiftVal;
+  audio.dacBuffer[1] = 152 >> shiftVal;
+  audio.dacBuffer[2] = 176 >> shiftVal;
+  audio.dacBuffer[3] = 198 >> shiftVal;
+  audio.dacBuffer[4] = 217 >> shiftVal;
+  audio.dacBuffer[5] = 233 >> shiftVal;
+  audio.dacBuffer[6] = 245 >> shiftVal;
+  audio.dacBuffer[7] = 252 >> shiftVal;
+  audio.dacBuffer[8] = 254 >> shiftVal;
+  audio.dacBuffer[9] = 252 >> shiftVal;
+  audio.dacBuffer[10] = 245 >> shiftVal;
+  audio.dacBuffer[11] = 233 >> shiftVal;
+  audio.dacBuffer[12] = 217 >> shiftVal;
+  audio.dacBuffer[13] = 198 >> shiftVal;
+  audio.dacBuffer[14] = 176 >> shiftVal;
+  audio.dacBuffer[15] = 152 >> shiftVal;
+  audio.dacBuffer[16] = 128 >> shiftVal;
+  audio.dacBuffer[17] = 103 >> shiftVal;
+  audio.dacBuffer[18] = 79 >> shiftVal;
+  audio.dacBuffer[19] = 57 >> shiftVal;
+  audio.dacBuffer[20] = 38 >> shiftVal;
+  audio.dacBuffer[21] = 22 >> shiftVal;
+  audio.dacBuffer[22] = 10 >> shiftVal;
+  audio.dacBuffer[23] = 3 >> shiftVal;
+  audio.dacBuffer[24] = 0 >> shiftVal;
+  audio.dacBuffer[25] = 3 >> shiftVal;
+  audio.dacBuffer[26] = 10 >> shiftVal;
+  audio.dacBuffer[27] = 22 >> shiftVal;
+  audio.dacBuffer[28] = 38 >> shiftVal;
+  audio.dacBuffer[29] = 57 >> shiftVal;
+  audio.dacBuffer[30] = 79 >> shiftVal;
+  audio.dacBuffer[31] = 103 >> shiftVal;
 }
 
 void setup()
@@ -94,10 +133,14 @@ void setup()
 
   Serial.println("[picomm] Initializing audio...");
   setupAudio();
+  arraysetup();
   Serial.println("[picomm] Audio initialized.");
 
+  Serial.print("[picomm] DAC0_PIN = ");
+  Serial.println(DAC0_PIN);
+
   Serial.println("[picomm] Initializing TX buttons...");
-  setupTxButtons();
+  // setupTxButtons();
   Serial.println("[picomm] TX buttons initialized.");
 
   Serial.println("[picomm] Initializing radio...");
@@ -107,6 +150,7 @@ void setup()
 
 void loop()
 {
+  /*
   for (size_t i = 0; i < RADIO_N_COMM_PIPES; ++i)
   {
     if (digitalRead(TX_BUTTONS[i]) == HIGH)
@@ -123,4 +167,20 @@ void loop()
 
     // radio.startListening();
   }
+    */
+
+  /*
+audio.getADC(32);
+
+Serial.print("[");
+for (size_t i = 0; i < 32; i++)
+{
+  Serial.print(audio.adcBuffer[i]);
+  if (i < 31)
+    Serial.print(", ");
+}
+Serial.println("]");
+*/
+
+  audio.feedDAC(AUDIO_DAC_CHANNEL, 32);
 }

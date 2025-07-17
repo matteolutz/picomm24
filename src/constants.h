@@ -42,7 +42,7 @@ const uint64_t PIPES[14] =
 
 /* #region TX Buttons */
 
-const size_t TX_BUTTONS[RADIO_N_COMM_PIPES] = {0, 0, 0, 0};
+const size_t TX_BUTTONS[RADIO_N_COMM_PIPES] = {4, 5, 6, 7};
 
 /* #endregion */
 
