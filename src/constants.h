@@ -39,10 +39,10 @@ const TransportMode TRANSPORT_MODE = TransportMode::Udp;
 
 #define NUM_TX_BUTTONS 4
 const TxButton TX_BUTTONS[NUM_TX_BUTTONS] = {
-    {.pin = 16, .channel = 0xFF},
-    {.pin = 17, .channel = 0x00},
-    {.pin = 18, .channel = 0x01},
-    {.pin = 19, .channel = 0x02},
+    {.pin = 16, .channel = 0xFF, .name = nullptr},
+    {.pin = 17, .channel = 0x00, .name = "Audio"},
+    {.pin = 18, .channel = 0x01, .name = "Lighting"},
+    {.pin = 19, .channel = 0x02, .name = "Video"},
 };
 
 /* #endregion */
