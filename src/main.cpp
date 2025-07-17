@@ -1,6 +1,10 @@
 #include <Arduino.h>
 
 #include <WiFi.h>
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+
+#include "logo.h"
 
 #include "log.h"
 #include "constants.h"
@@ -34,6 +38,8 @@ i2s_config_t i2sAdcConfig = {
 
 ADCSampler input(ADC_UNIT_1, ADC_MIC_CHANNEL, i2sAdcConfig);
 DACOutput output(I2S_NUM_0);
+
+Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 
 #define RECEIVE_BUFFER_SIZE 128
 int16_t samples[RECEIVE_BUFFER_SIZE];
@@ -90,6 +96,21 @@ void setup()
     pinMode(TX_BUTTONS[i].pin, INPUT_PULLUP);
   }
   LOG_INFO("TX Buttons initialized successfully");
+
+  LOG_INFO("Initializing OLED Display...");
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS))
+  {
+    LOG_ERROR("Failed to initialize OLED display, rebooting...");
+    delay(5000);
+    ESP.restart();
+    return;
+  }
+
+  display.clearDisplay();
+  display.drawBitmap(0, 0, picommLogo, OLED_WIDTH, OLED_HEIGHT, WHITE);
+  display.display();
+
+  LOG_INFO("OLED Display initialized successfully");
 
   LOG_INFO("Done! Let's rock this show!");
 }

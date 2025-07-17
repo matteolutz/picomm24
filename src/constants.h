@@ -47,4 +47,15 @@ const TxButton TX_BUTTONS[NUM_TX_BUTTONS] = {
 
 /* #endregion */
 
+/* region OLED */
+
+#define OLED_WIDTH 128
+#define OLED_HEIGHT 32
+
+#define OLED_RESET -1
+
+#define OLED_I2C_ADDRESS 0x3C
+
+/* endregion */
+
 #endif // CONSTANTS_H
