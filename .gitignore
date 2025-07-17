@@ -4,3 +4,9 @@
 
 # MacOS files
 .DS_Store
+
+# Python files
+python/venv
+
+# Files with credentials or sensitive information
+src/wifi_creds.h

@@ -1,186 +1,155 @@
 #include <Arduino.h>
 
-#include <AutoAnalogAudio.h>
-#include <RF24.h>
+#include <WiFi.h>
 
+#include "log.h"
 #include "constants.h"
 
-#ifndef IRAM_ATTR
-#define IRAM_ATTR
-#endif // IRAM_ATTR
+#include "EspNowTransport.h"
+#include "UdpTransport.h"
+#include "PicommHeader.h"
 
-AutoAnalog audio;
+#include "ADCSampler.h"
 
-// RF24 radio(RADIO_CE, RADIO_CSN);
+#include "Output.h"
+#include "DACOutput.h"
+#include "OutputBuffer.h"
 
-const size_t COMM_PIPES[RADIO_N_COMM_PIPES] = {0, 1, 2, 3};
+OutputBuffer outputBuffer(300 * 16);
 
-void IRAM_ATTR DACC_Handler(void)
-{
-  audio.dacHandler(); // Link the DAC ISR/IRQ library. Called by the MCU when DAC is ready for data
-}
+Transport *transport = nullptr;
 
-void IRAM_ATTR RX_Handler()
-{
-  /*
-  uint8_t pipe;
-  while (radio.available(&pipe))
-  {
-    radio.read(&audio.dacBuffer, 32);
+i2s_config_t i2sAdcConfig = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
+    .sample_rate = AUDIO_SAMPLE_RATE,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_MIC_CHANNEL,
+    .communication_format = I2S_COMM_FORMAT_STAND_MSB,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 4,
+    .dma_buf_len = 64,
+    .use_apll = false,
+    .tx_desc_auto_clear = false,
+    .fixed_mclk = 0};
 
+ADCSampler input(ADC_UNIT_1, ADC_MIC_CHANNEL, i2sAdcConfig);
+DACOutput output(I2S_NUM_0);
 
-  audio.feedDAC(AUDIO_DAC_CHANNEL, 32);
-}
-else
-{
-  // If not RX IRQ, than it must be TX complete
-  radio.txStandby();
-  radio.startListening();
-}
-*/
-}
-
-void setupAudio()
-{
-  audio.begin(1, 1);
-  audio.autoAdjust = 0;
-  audio.dacBitsPerSample = 8;
-  audio.adcBitsPerSample = 8;
-  audio.setSampleRate(AUDIO_SAMPLE_RATE);
-}
-
-void setupTxButtons()
-{
-  for (size_t i = 0; i < RADIO_N_COMM_PIPES; ++i)
-  {
-    pinMode(TX_BUTTONS[i], INPUT_PULLUP);
-  }
-}
-
-void setupRadio()
-{
-  /*
-    radio.begin();
-    radio.setChannel(RADIO_CHANNEL);
-    radio.setPALevel(RF24_PA_MAX);
-    radio.setDataRate(RF24_1MBPS);
-    radio.setAutoAck(false);
-    radio.setCRCLength(RF24_CRC_8);
-    radio.setAddressWidth(5);
-
-    for (uint8_t i = 0; i < RADIO_N_COMM_PIPES; ++i)
-    {
-      radio.openReadingPipe(i + 1, PIPES[COMM_PIPES[i]]);
-    }
-
-    radio.txDelay = 0;
-    radio.csDelay = 0;
-
-    radio.maskIRQ(0, 1, 0);
-    radio.printDetails();
-
-    radio.startListening();
-
-    attachInterrupt(digitalPinToInterrupt(RADIO_IRQ), RX_Handler, FALLING);
-    */
-}
-
-uint8_t shiftVal = 0;
-
-void arraysetup(void)
-{
-  audio.dacBuffer[0] = 127 >> shiftVal;
-  audio.dacBuffer[1] = 152 >> shiftVal;
-  audio.dacBuffer[2] = 176 >> shiftVal;
-  audio.dacBuffer[3] = 198 >> shiftVal;
-  audio.dacBuffer[4] = 217 >> shiftVal;
-  audio.dacBuffer[5] = 233 >> shiftVal;
-  audio.dacBuffer[6] = 245 >> shiftVal;
-  audio.dacBuffer[7] = 252 >> shiftVal;
-  audio.dacBuffer[8] = 254 >> shiftVal;
-  audio.dacBuffer[9] = 252 >> shiftVal;
-  audio.dacBuffer[10] = 245 >> shiftVal;
-  audio.dacBuffer[11] = 233 >> shiftVal;
-  audio.dacBuffer[12] = 217 >> shiftVal;
-  audio.dacBuffer[13] = 198 >> shiftVal;
-  audio.dacBuffer[14] = 176 >> shiftVal;
-  audio.dacBuffer[15] = 152 >> shiftVal;
-  audio.dacBuffer[16] = 128 >> shiftVal;
-  audio.dacBuffer[17] = 103 >> shiftVal;
-  audio.dacBuffer[18] = 79 >> shiftVal;
-  audio.dacBuffer[19] = 57 >> shiftVal;
-  audio.dacBuffer[20] = 38 >> shiftVal;
-  audio.dacBuffer[21] = 22 >> shiftVal;
-  audio.dacBuffer[22] = 10 >> shiftVal;
-  audio.dacBuffer[23] = 3 >> shiftVal;
-  audio.dacBuffer[24] = 0 >> shiftVal;
-  audio.dacBuffer[25] = 3 >> shiftVal;
-  audio.dacBuffer[26] = 10 >> shiftVal;
-  audio.dacBuffer[27] = 22 >> shiftVal;
-  audio.dacBuffer[28] = 38 >> shiftVal;
-  audio.dacBuffer[29] = 57 >> shiftVal;
-  audio.dacBuffer[30] = 79 >> shiftVal;
-  audio.dacBuffer[31] = 103 >> shiftVal;
-}
+#define RECEIVE_BUFFER_SIZE 128
+int16_t samples[RECEIVE_BUFFER_SIZE];
 
 void setup()
 {
-  Serial.begin(115200);
-  while (!Serial)
-    ; // Wait for Serial to be ready
+  LOG_INIT();
 
-  Serial.println("[picomm] Welcome, starting up...");
+  LOG_INFO("Starting...");
 
-  Serial.println("[picomm] Initializing audio...");
-  setupAudio();
-  arraysetup();
-  Serial.println("[picomm] Audio initialized.");
+  LOG_INFO("Initializing WiFi and creating Transport...");
+  WiFi.mode(WIFI_STA);
+  switch (TRANSPORT_MODE)
+  {
+  case TransportMode::EspNow:
+    LOG_DEBUG("Transport mode: ESP-NOW");
+    WiFi.disconnect();
+    transport = new EspNowTransport(&outputBuffer, ESP_NOW_WIFI_CHANNEL);
+    break;
+  case TransportMode::Udp:
+    LOG_DEBUG("Transport mode: UDP");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWD);
+    if (WiFi.waitForConnectResult() != WL_CONNECTED)
+    {
+      LOG_ERROR("Failed to connect to WiFi network '%s', rebooting...", WIFI_SSID);
+      delay(5000);
+      ESP.restart();
+      return;
+    }
 
-  Serial.print("[picomm] DAC0_PIN = ");
-  Serial.println(DAC0_PIN);
+    WiFi.setSleep(WIFI_PS_NONE);
+    LOG_INFO("Connected to WiFi network: %s", WIFI_SSID);
+    LOG_INFO("IP Address: %s", WiFi.localIP().toString().c_str());
+    LOG_INFO("MAC Address: %s", WiFi.macAddress().c_str());
 
-  Serial.println("[picomm] Initializing TX buttons...");
-  // setupTxButtons();
-  Serial.println("[picomm] TX buttons initialized.");
+    transport = new UdpTransport(&outputBuffer);
+    break;
+  }
 
-  Serial.println("[picomm] Initializing radio...");
-  setupRadio();
-  Serial.println("[picomm] Radio initialized.");
+  transport->begin();
+  LOG_INFO("WiFi and Transport initialized successfully");
+
+  LOG_INFO("Initializing Output...");
+  output.start(AUDIO_SAMPLE_RATE);
+  LOG_INFO("Output initialized successfully");
+
+  LOG_INFO("Flushing OutputBuffer...");
+  outputBuffer.flush();
+  LOG_INFO("OutputBuffer flushed successfully");
+
+  LOG_INFO("Initializing TX Buttons...");
+  for (size_t i = 0; i < NUM_TX_BUTTONS; i++)
+  {
+    pinMode(TX_BUTTONS[i].pin, INPUT_PULLUP);
+  }
+  LOG_INFO("TX Buttons initialized successfully");
+
+  LOG_INFO("Done! Let's rock this show!");
 }
+
+void send();
+void receive();
 
 void loop()
 {
-  /*
-  for (size_t i = 0; i < RADIO_N_COMM_PIPES; ++i)
+  send();
+  receive();
+}
+
+unsigned long lastTx = 0;
+void send()
+{
+  if (millis() - lastTx < 1000)
   {
-    if (digitalRead(TX_BUTTONS[i]) == HIGH)
-      continue; // Skip if the button is not pressed
+    return; // Avoid sending too frequently
+  }
 
-    radio.stopListening();
-    radio.openWritingPipe(PIPES[COMM_PIPES[i]]);
+  // Check if any TX button is pressed
+  for (size_t i = 0; i < NUM_TX_BUTTONS; i++)
+  {
+    if (digitalRead(TX_BUTTONS[i].pin) == HIGH)
+      continue;
 
-    while (digitalRead(TX_BUTTONS[i]) == LOW)
+    LOG_INFO("TX button %d pressed, transmitting", i);
+
+    PicommHeader header = {
+        .channel = TX_BUTTONS[i].channel,
+    };
+    transport->setHeader(&header);
+
+    output.stop();
+    input.start();
+
+    LOG_DEBUG("Starting transmission on channel %d", TX_BUTTONS[i].channel);
+    unsigned long txStart = millis();
+    while (millis() - txStart < 1000 || digitalRead(TX_BUTTONS[i].pin) == LOW)
     {
-      audio.getADC(32);
-      radio.startFastWrite(&audio.adcBuffer, 32, 1);
+      int samplesRead = input.read(samples, RECEIVE_BUFFER_SIZE);
+      for (int i = 0; i < samplesRead; i++)
+      {
+        transport->addSample(samples[i]);
+      }
     }
 
-    // radio.startListening();
+    transport->flush();
+
+    input.stop();
+    output.start(AUDIO_SAMPLE_RATE);
+
+    LOG_INFO("Transmission complete on channel %d, receiving again...", TX_BUTTONS[i].channel);
+    lastTx = millis();
   }
-    */
-
-  /*
-audio.getADC(32);
-
-Serial.print("[");
-for (size_t i = 0; i < 32; i++)
-{
-  Serial.print(audio.adcBuffer[i]);
-  if (i < 31)
-    Serial.print(", ");
 }
-Serial.println("]");
-*/
 
-  audio.feedDAC(AUDIO_DAC_CHANNEL, 32);
+void receive()
+{
+  outputBuffer.remove_samples(samples, RECEIVE_BUFFER_SIZE);
+  output.write(samples, RECEIVE_BUFFER_SIZE);
 }
